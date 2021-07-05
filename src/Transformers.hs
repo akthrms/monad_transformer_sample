@@ -98,7 +98,7 @@ eval2 env (App e1 e2) = do
   v1 <- eval2 env e1
   v2 <- eval2 env e2
   case v1 of
-    FunVal env' n body -> eval1 (Map.insert n v2 env') body
+    FunVal env' n body -> eval2 (Map.insert n v2 env') body
     _ -> throwError "type error in application"
 
 -- >>> runEval2 (eval2 Map.empty exampleExp)
@@ -109,3 +109,84 @@ eval2 env (App e1 e2) = do
 
 -- >>> runEval2 (eval2 Map.empty (Var "x"))
 -- Left "unbound variable: x"
+
+-- Eval3
+
+type Eval3 a = ReaderT Env (ExceptT String Identity) a
+
+runEval3 :: Env -> Eval3 a -> Either String a
+runEval3 env eval = runIdentity (runExceptT (runReaderT eval env))
+
+eval3 :: Exp -> Eval3 Value
+eval3 (Lit n) = pure (IntVal n)
+eval3 (Var n) = do
+  env <- ask
+  case Map.lookup n env of
+    Just v -> pure v
+    Nothing -> throwError ("unbound variable: " ++ n)
+eval3 (Plus e1 e2) = do
+  env <- ask
+  v1 <- eval3 e1
+  v2 <- eval3 e2
+  case (v1, v2) of
+    (IntVal n1, IntVal n2) -> pure (IntVal (n1 + n2))
+    _ -> throwError "type error in addition"
+eval3 (Abs n e) = do
+  env <- ask
+  pure (FunVal env n e)
+eval3 (App e1 e2) = do
+  env <- ask
+  v1 <- eval3 e1
+  v2 <- eval3 e2
+  case v1 of
+    FunVal env' n body -> local (const (Map.insert n v2 env')) (eval3 body)
+    _ -> throwError "type error in application"
+
+-- >>> runEval3 Map.empty (eval3 exampleExp)
+-- Right (IntVal 18)
+
+-- Eval4
+
+type Eval4 a = ReaderT Env (ExceptT String (StateT Integer Identity)) a
+
+runEval4 :: Env -> Integer -> Eval4 a -> (Either String a, Integer)
+runEval4 env state eval = runIdentity (runStateT (runExceptT (runReaderT eval env)) state)
+
+tick :: (Num s, MonadState s m) => m ()
+tick = do
+  state <- get
+  put (state + 1)
+
+eval4 :: Exp -> Eval4 Value
+eval4 (Lit n) = do
+  tick
+  pure (IntVal n)
+eval4 (Var n) = do
+  tick
+  env <- ask
+  case Map.lookup n env of
+    Just v -> pure v
+    Nothing -> throwError ("unbound variable: " ++ n)
+eval4 (Plus e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval4 e1
+  v2 <- eval4 e2
+  case (v1, v2) of
+    (IntVal n1, IntVal n2) -> pure (IntVal (n1 + n2))
+    _ -> throwError "type error in addition"
+eval4 (Abs n e) = do
+  tick
+  env <- ask
+  pure (FunVal env n e)
+eval4 (App e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval4 e1
+  v2 <- eval4 e2
+  case v1 of
+    FunVal env' n body -> local (const (Map.insert n v2 env')) (eval4 body)
+    _ -> throwError "type error in application"
+
+-- >>> runEval4 Map.empty 0 (eval4 exampleExp)
+-- (Right (IntVal 18),8)
