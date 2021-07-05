@@ -190,3 +190,8 @@ eval4 (App e1 e2) = do
 
 -- >>> runEval4 Map.empty 0 (eval4 exampleExp)
 -- (Right (IntVal 18),8)
+
+type Eval4' a = ReaderT Env (StateT Integer (ExceptT String Identity)) a
+
+runEval4' :: Env -> Integer -> Eval4' a -> Either String (a, Integer)
+runEval4' env state eval = runIdentity (runExceptT (runStateT (runReaderT eval env) state))
