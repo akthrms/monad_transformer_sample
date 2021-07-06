@@ -195,3 +195,88 @@ type Eval4' a = ReaderT Env (StateT Integer (ExceptT String Identity)) a
 
 runEval4' :: Env -> Integer -> Eval4' a -> Either String (a, Integer)
 runEval4' env state eval = runIdentity (runExceptT (runStateT (runReaderT eval env) state))
+
+-- Eval5
+
+type Eval5 a = ReaderT Env (ExceptT String (WriterT [String] (StateT Integer Identity))) a
+
+runEval5 :: Env -> Integer -> Eval5 a -> ((Either String a, [String]), Integer)
+runEval5 env state eval = runIdentity (runStateT (runWriterT (runExceptT (runReaderT eval env))) state)
+
+eval5 :: Exp -> Eval5 Value
+eval5 (Lit n) = do
+  tick
+  pure (IntVal n)
+eval5 (Var n) = do
+  tick
+  tell [n]
+  env <- ask
+  case Map.lookup n env of
+    Just v -> pure v
+    Nothing -> throwError ("unbound variable: " ++ n)
+eval5 (Plus e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval5 e1
+  v2 <- eval5 e2
+  case (v1, v2) of
+    (IntVal n1, IntVal n2) -> pure (IntVal (n1 + n2))
+    _ -> throwError "type error in addition"
+eval5 (Abs n e) = do
+  tick
+  env <- ask
+  pure (FunVal env n e)
+eval5 (App e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval5 e1
+  v2 <- eval5 e2
+  case v1 of
+    FunVal env' n body -> local (const (Map.insert n v2 env')) (eval5 body)
+    _ -> throwError "type error in application"
+
+-- >>> runEval5 Map.empty 0 (eval5 exampleExp)
+-- ((Right (IntVal 18),["x"]),8)
+
+-- Eval6
+
+type Eval6 a = ReaderT Env (ExceptT String (WriterT [String] (StateT Integer IO))) a
+
+runEval6 :: Env -> Integer -> Eval6 a -> IO ((Either String a, [String]), Integer)
+runEval6 env state eval = runStateT (runWriterT (runExceptT (runReaderT eval env))) state
+
+eval6 :: Exp -> Eval6 Value
+eval6 (Lit n) = do
+  tick
+  liftIO (print n)
+  pure (IntVal n)
+eval6 (Var n) = do
+  tick
+  tell [n]
+  env <- ask
+  case Map.lookup n env of
+    Just v -> pure v
+    Nothing -> throwError ("unbound variable: " ++ n)
+eval6 (Plus e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval6 e1
+  v2 <- eval6 e2
+  case (v1, v2) of
+    (IntVal n1, IntVal n2) -> pure (IntVal (n1 + n2))
+    _ -> throwError "type error in addition"
+eval6 (Abs n e) = do
+  tick
+  env <- ask
+  pure (FunVal env n e)
+eval6 (App e1 e2) = do
+  tick
+  env <- ask
+  v1 <- eval6 e1
+  v2 <- eval6 e2
+  case v1 of
+    FunVal env' n body -> local (const (Map.insert n v2 env')) (eval6 body)
+    _ -> throwError "type error in application"
+
+-- >>> runEval6 Map.empty 0 (eval6 exampleExp)
+-- ((Right (IntVal 18),["x"]),8)
